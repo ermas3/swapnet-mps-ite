@@ -1,4 +1,4 @@
-using ITensors, ITensorMPS, Graphs, Plots, Statistics, JSON
+using ITensors, ITensorMPS, Graphs, Plots, Statistics, JSON, LinearAlgebra
   
 function expZZ(tau, J)
   ZZ = [1 0 0 0; 0 -1 0 0; 0 0 -1 0; 0 0 0 1]
@@ -34,7 +34,7 @@ function load_ising(path::String)
     return J, h, offset
 end
 
-function ising_energy(sample::Vector{Int}, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Float64}, offset::Float64)::Float64
+function sample_energy(sample::Vector{Int}, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Float64}, offset::Float64)::Float64
   energy = offset
   N = length(sample)
   for i in 1:N
@@ -48,7 +48,30 @@ function ising_energy(sample::Vector{Int}, J::Dict{Tuple{Int,Int}, Float64}, h::
   return energy
 end
 
-function SWAP_network_block(s, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Float64}, tau::Float64, logical_qubit_order::Vector{Int}=collect(1:length(s)))
+function state_energy(zvals::Vector{Float64}, zzcorr::Matrix{Float64}, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Float64}, offset::Float64)::Float64
+  energy = offset
+  N = length(zvals)
+  for i in 1:N
+    si = zvals[i]
+    energy += get(h, i, 0.0) * si
+    for j in i+1:N
+      sj = zvals[j]
+      energy += get(J, (i,j), 0.0) * zzcorr[i,j]
+    end
+  end
+  return energy
+end
+
+function SWAP_network_block(s, 
+  J::Dict{Tuple{Int,Int}, 
+  Float64}, 
+  h::Dict{Int, Float64}, 
+  tau::Float64, 
+  logical_qubit_order::Vector{Int}=collect(1:length(s)), 
+  zzcorr::Matrix{Float64}=zeros(length(s), length(s)), 
+  zvals::Vector{Float64}=zeros(length(s))
+  )
+
   SWAP = [1 0 0 0; 0 0 1 0; 0 1 0 0; 0 0 0 1]
   N = length(s)
 
@@ -91,55 +114,6 @@ function SWAP_network_block(s, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Fl
   return gates, logical_qubit_order
 end
 
-# function SWAP_network_block(s, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Float64}, tau::Float64, logical_qubit_order::Vector{Int}=collect(1:length(s)))
-#   SWAP = [1 0 0 0; 0 0 1 0; 0 1 0 0; 0 0 0 1]
-#   N = length(s)
-
-#   logical_qubit_order = collect(Int, 1:N)
-#   gates = ITensor[]
-
-#   for _ in 1:2 # Two full sweeps to get logical qubits back to original order
-
-#     # Apply two-qubit coupling via SWAP network
-#     for layer in 1:N
-#       if layer % 2 == 1
-#         pairs = [(i, i+1) for i in 1:2:N-1 if i+1 <= N]
-#       else layer % 2 == 0
-#         pairs = [(i, i+1) for i in 2:2:N-1 if i+1 <= N]
-#       end
-
-#       for (a, b) in pairs
-#         qa = logical_qubit_order[a]
-#         qb = logical_qubit_order[b]
-        
-#         coupling_weight = get(J, (min(qa,qb), max(qa,qb)), 0.0)
-#         if coupling_weight != 0.0
-#           gate = op(expZZ(tau, coupling_weight), s[a], s[b])
-#           push!(gates, gate)
-#         end
-
-#         SWAP_gate = ITensorMPS.op(SWAP, s[a], s[b])
-#         push!(gates, SWAP_gate)
-
-#         logical_qubit_order[a], logical_qubit_order[b] = logical_qubit_order[b], logical_qubit_order[a]
-#       end
-#     end
-
-#     # Apply single-qubit fields
-#     for i in 1:N
-#       qi = logical_qubit_order[i]
-#       field_strength = get(h, qi, 0.0)
-#       if field_strength != 0.0
-#         gate = op(expZ(tau, field_strength), s[i])
-#         push!(gates, gate)
-#       end
-#     end
-
-#   end
-
-#   return gates
-# end
-
 function Hadamard_block(s)
   H = (1/sqrt(2)) * [1 1; 1 -1]
   N = length(s)
@@ -151,11 +125,40 @@ function Hadamard_block(s)
   return gates
 end
 
+function get_QRR_matrix(zzcorr::Matrix{Float64})
+  # Set diagonal to zero
+  for i in 1:size(zzcorr, 1)
+    zzcorr[i,i] = 0.0
+  end
+  return -zzcorr
+end
+
+function get_QRR(zzcorr::Matrix{Float64}, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Float64}, offset::Float64)
+  QRR_matrix = get_QRR_matrix(zzcorr)
+  eigenvectors = eigen(QRR_matrix).vectors
+  # Apply sign function to every element
+  sign_eigenvectors = map(x -> x >= 0 ? 1 : -1, eigenvectors)
+  # Iterate over the eigenvectors, calculate the energy of each bitstring, and return the one with the lowest energy
+  min_energy = Inf
+  best_bitstring = nothing
+  for i in 1:size(sign_eigenvectors, 2)
+    bitstring = sign_eigenvectors[:, i]
+    bitstring = map(x -> x == 1 ? 0 : 1, bitstring)  # Convert from +1/-1 to 0/1
+    energy = sample_energy(bitstring, J, h, offset)
+    if energy < min_energy
+      min_energy = energy
+      best_bitstring = bitstring
+    end
+  end
+  return best_bitstring, min_energy
+end
+
 let
+  BLAS.set_num_threads(8)
   # TEBD parameters
   cutoff = 1E-9
-  tau = 80.0
-  ttotal = 400.0
+  tau = 100.0
+  ttotal = 2000.0
   chi = 32
 
   # Load JSON file 
@@ -170,10 +173,15 @@ let
   println("Number of sites: $(length(s))")
   Hadamard_gates = Hadamard_block(s)
 
-  # Optimization loop
+  # Initial state |+++...+>
   psi = productMPS(s, "Up")
   psi = apply(Hadamard_gates, psi; cutoff=cutoff, maxdim=chi)
 
+  # Initial correlations and expectations
+  zzcorr = 4 * correlation_matrix(psi,"Sz","Sz")
+  zvals = 2 * expect(psi,"Sz")
+
+  # Optimization loop
   init_logical_qubit_order = collect(1:N)
   logical_qubit_order = copy(init_logical_qubit_order)
   for t in 0.0:tau:ttotal
@@ -182,8 +190,20 @@ let
     psi = apply(TEBD_gates, psi; cutoff=cutoff, maxdim=chi)
     println("Norm before normalization: ", norm(psi))
     normalize!(psi)
-    println("Norm after normalization: ", norm(psi))
-  end
+
+    zvals = 2 * expect(psi,"Sz")
+    zzcorr = 4 * correlation_matrix(psi,"Sz","Sz")
+    # Reorder zvals and zzcorr if logical order is permuted
+    if logical_qubit_order != init_logical_qubit_order
+      zvals = zvals[logical_qubit_order]
+      zzcorr = zzcorr[logical_qubit_order, logical_qubit_order]
+    end
+
+    energy = state_energy(zvals, zzcorr, J, h, offset)
+    best_bitstring, best_energy = get_QRR(zzcorr, J, h, offset)
+    
+    println("State energy: $energy", " Best QRR energy: $best_energy")
+  end  
 
   # Generate N_s samples
   N_s = 1000
@@ -197,17 +217,17 @@ let
     end
   end
 
-  energy_samples = [ising_energy(s, J, h, offset) for s in samples]
+  energy_samples = [sample_energy(s, J, h, offset) for s in samples]
 
   avg_energy = Statistics.mean(energy_samples)
   std_energy = Statistics.std(energy_samples)
   println("Average energy: $avg_energy ± $std_energy")
   println("Best energy: $(minimum(energy_samples))")
-  println("Best sample: $(samples[argmin(energy_samples)])")
+  #println("Best sample: $(samples[argmin(energy_samples)])")
 
   # Generate random bitstrings and compute their energies
   random_samples = [rand(0:1, N) for _ in 1:N_s]
-  random_energies = [ising_energy(s, J, h, offset) for s in random_samples]
+  random_energies = [sample_energy(s, J, h, offset) for s in random_samples]
 
   avg_random_energy = Statistics.mean(random_energies)
   std_random_energy = Statistics.std(random_energies)
