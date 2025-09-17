@@ -1,4 +1,4 @@
-using ITensors, ITensorMPS, Graphs, Plots, Statistics, JSON, LinearAlgebra, CUDA
+using ITensors, ITensorMPS, Graphs, Plots, Statistics, JSON, LinearAlgebra
 
 function expN(tau, h, d)
   # N operator with diagonal entries [0, 1, 2, ..., d-1]
@@ -205,14 +205,14 @@ end
 let
   # TEBD parameters
   cutoff = 1E-9
-  tau = 6.0
-  ttotal = 60.0
+  tau = 4.0
+  ttotal = 15*tau
   chi = 64
-  d = 4  # local dimension
+  d = 2  # local dimension NOTE! MUST MATCH Nq such that d = 2^N_q
 
   # Load JSON file 
-  path = "data/MIP/MIP_Ns10_Nt9_Nq2_K15_gamma0.5_zeta0.1_rho0.1.json"
-  println("Loading Ising model from $path")
+  path = "data/MIP/MIP_Ns10_Nt9_Nq1_K15_gamma0.5_zeta0.1_rho0.1.json"
+  println("Loading MIP model from $path")
   J, h, h2 = load_ising(path)
   N = maximum(collect(keys(h)))  # Number of integer variables
 

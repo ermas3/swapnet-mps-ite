@@ -11,7 +11,7 @@ H_matrix = (1/sqrt(2)) * [1 1; 1 -1]
 PauliZ = [1 0; 0 -1]
 
 let
-  N = 50
+  N = 100
   cutoff = 1E-8
   tau = 0.1
   ttotal = 5.0
