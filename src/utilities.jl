@@ -91,3 +91,24 @@ function get_samples(psi, N_s, logical_qubit_order)
     end
     return samples
 end
+
+function get_entanglement_entropy(psi, b)
+    psi = orthogonalize(psi, b)
+    U,S,V = svd(psi[b], (linkinds(psi, b-1)..., siteinds(psi, b)...))
+    SvN = 0.0
+    for n=1:dim(S, 1)
+        p = S[n,n]^2
+        SvN -= p * log(p)
+    end
+    return SvN
+end
+
+function get_all_entanglement_entropies(psi)
+    N = length(psi)
+    entropies = Float64[]
+    for b in 1:N-1
+        SvN = get_entanglement_entropy(psi, b)
+        push!(entropies, SvN)
+    end
+    return entropies
+end
