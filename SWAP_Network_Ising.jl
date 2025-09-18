@@ -1,14 +1,14 @@
-using ITensors, ITensorMPS, Graphs, Plots, Statistics, JSON, LinearAlgebra
+using ITensors, ITensorMPS, Graphs, Plots, Statistics, JSON, LinearAlgebra, Random
   
-function expZZ(tau, J)
-  ZZ = [1 0 0 0; 0 -1 0 0; 0 0 -1 0; 0 0 0 1]
-  return exp(-tau * J * ZZ)
-end
+# function expZZ(tau, J)
+#   ZZ = [1 0 0 0; 0 -1 0 0; 0 0 -1 0; 0 0 0 1]
+#   return exp(-tau * J * ZZ)
+# end
 
-function expZ(tau, h)
-  Z = [1 0; 0 -1]
-  return exp(-tau * h * Z)
-end
+# function expZ(tau, h)
+#   Z = [1 0; 0 -1]
+#   return exp(-tau * h * Z)
+# end
 
 function load_ising(path::String)
     data = JSON.parsefile(path)
@@ -34,7 +34,12 @@ function load_ising(path::String)
     return J, h, offset
 end
 
-function sample_energy(sample::Vector{Int}, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Float64}, offset::Float64)::Float64
+function sample_energy(
+  sample::Vector{Int}, 
+  J::Dict{Tuple{Int,Int}, Float64}, 
+  h::Dict{Int, Float64}, 
+  offset::Float64
+  )::Float64
   energy = offset
   N = length(sample)
   for i in 1:N
@@ -48,7 +53,13 @@ function sample_energy(sample::Vector{Int}, J::Dict{Tuple{Int,Int}, Float64}, h:
   return energy
 end
 
-function state_energy(zvals::Vector{Float64}, zzcorr::Matrix{Float64}, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Float64}, offset::Float64)::Float64
+function state_energy(
+  zvals::Vector{Float64}, 
+  zzcorr::Matrix{Float64}, 
+  J::Dict{Tuple{Int,Int}, Float64}, 
+  h::Dict{Int, Float64}, 
+  offset::Float64
+  )::Float64
   energy = offset
   N = length(zvals)
   for i in 1:N
@@ -99,9 +110,12 @@ function SWAP_network_block(s,
       # push!(gates, SWAP_gate)
 
       # TODO: Is it faster to combine all three operations into a single gate?
-      gate_matrix = expZZ(tau, coupling_weight)
-      renormalization_matrix = UniformScaling(exp(zzcorr[qa, qb] * tau * coupling_weight))
-      gate = op(SWAP_matrix * gate_matrix * renormalization_matrix, s[a], s[b])
+      # gate_matrix = expZZ(tau, coupling_weight)
+      # renormalization_matrix = UniformScaling(exp(zzcorr[qa, qb] * tau * coupling_weight))
+      ZZ_matrix = [1 0 0 0; 0 -1 0 0; 0 0 -1 0; 0 0 0 1]
+      renormalization_matrix = UniformScaling(zzcorr[qa, qb])
+      gate_matrix = exp(-tau * coupling_weight * (ZZ_matrix - renormalization_matrix))
+      gate = op(SWAP_matrix * gate_matrix, s[a], s[b])
       push!(gates, gate)
 
       logical_qubit_order[a], logical_qubit_order[b] = logical_qubit_order[b], logical_qubit_order[a]
@@ -118,9 +132,12 @@ function SWAP_network_block(s,
     #   push!(gates, gate)
     # end
 
-    gate_matrix = expZ(tau, field_strength)
-    renormalization_matrix = UniformScaling(exp(zvals[qi] * tau * field_strength))
-    gate = op(gate_matrix * renormalization_matrix, s[i])
+    # gate_matrix = expZ(tau, field_strength)
+    # renormalization_matrix = UniformScaling(exp(zvals[qi] * tau * field_strength))
+    Z_matrix = [1 0; 0 -1]
+    renormalization_matrix = UniformScaling(zvals[qi])
+    gate_matrix = exp(-tau * field_strength * (Z_matrix - renormalization_matrix))
+    gate = op(gate_matrix, s[i])
     push!(gates, gate)
   end
 
@@ -146,7 +163,12 @@ function get_QRR_matrix(zzcorr::Matrix{Float64})
   return -zzcorr
 end
 
-function get_QRR(zzcorr::Matrix{Float64}, J::Dict{Tuple{Int,Int}, Float64}, h::Dict{Int, Float64}, offset::Float64)
+function get_QRR(
+  zzcorr::Matrix{Float64}, 
+  J::Dict{Tuple{Int,Int}, Float64}, 
+  h::Dict{Int, Float64}, 
+  offset::Float64
+  )
   QRR_matrix = get_QRR_matrix(zzcorr)
   eigenvectors = eigen(QRR_matrix).vectors
   # Apply sign function to every element
@@ -166,29 +188,43 @@ function get_QRR(zzcorr::Matrix{Float64}, J::Dict{Tuple{Int,Int}, Float64}, h::D
   return best_bitstring, min_energy
 end
 
+function is_independent_set(
+  bitstring::Vector{Int}, 
+  edges::Vector{Tuple{Int,Int}}
+  )::Bool
+  for (i, j) in edges
+    if bitstring[i] == 1 && bitstring[j] == 1
+      return false
+    end
+  end
+  return true
+end
+
 let
   BLAS.set_num_threads(8)
   # TEBD parameters
   cutoff = 1E-9
-  tau = 1.0 # Initial timestep
-  ttotal = 3000.0
-  chi = 32
-  dE_target = 1E-2
+  tau = 5E-2 # Initial timestep
+  ttotal = 30.0
+  chi = 8
+  #dE_target = 100
 
   # Load JSON file 
-  path = "data/Ising/ising_Ns10_Nt9_Nq2_K15_gamma0.5_zeta0.1_rho0.1.json"
+  #path = "data/MIS/Ising/ising_C125-9.json"
+  path = "data/MIS/Ising/ising_insecta-ant-colony1-day38.json"
+  #path = "data/portfolio/Ising/ising_Ns10_Nt9_Nq2_K15_gamma0.5_zeta0.1_rho0.1.json"
   J, h, offset = load_ising(path)
   N = maximum(collect(keys(h)))  # Number of qubits
 
   println("Optimizing Ising model with $N qubits and $(length(collect(keys(J)))) couplings")
 
   # Make an array of 'site' indices
-  s = siteinds("S=1/2", N; conserve_qns=false)
-  println("Number of sites: $(length(s))")
-  Hadamard_gates = Hadamard_block(s)
+  sites = siteinds("S=1/2", N; conserve_qns=false)
+  println("Number of sites: $(length(sites))")
+  Hadamard_gates = Hadamard_block(sites)
 
   # Initial state |+++...+>
-  psi = productMPS(s, "Up")
+  psi = productMPS(sites, "Up")
   psi = apply(Hadamard_gates, psi; cutoff=cutoff, maxdim=chi)
 
   # Initial correlations and expectations
@@ -199,11 +235,30 @@ let
 
   # Optimization loop
   init_logical_qubit_order = collect(1:N)
+  #init_logical_qubit_order = randperm(N)
   logical_qubit_order = copy(init_logical_qubit_order)
   for t in 0.0:tau:ttotal
     println("Time: $t")
 
-    TEBD_gates, logical_qubit_order = SWAP_network_block(s, J, h, tau, logical_qubit_order, zzcorr, zvals)
+    # Generate N_s samples
+    N_s = 1000
+    psi = orthogonalize(psi, 1)
+    samples = [sample(psi).-1 for _ in 1:N_s]
+    # If logical order is permuted, reorder bits in samples
+    if logical_qubit_order != init_logical_qubit_order
+      for s in samples
+        s[:] = s[logical_qubit_order]
+      end
+    end
+    energy_samples = [sample_energy(s, J, h, offset) for s in samples]
+    energy_std = Statistics.std(energy_samples)
+    println("Energy std of samples: $energy_std.")
+
+    # Apply SWAP Network block
+    println("Effective time step: ", tau/energy_std)
+    tau_effective = tau / energy_std
+    tau_effective = clamp(tau_effective, 1E-2, 1E3)
+    TEBD_gates, logical_qubit_order = SWAP_network_block(sites, J, h, tau_effective, logical_qubit_order, zzcorr, zvals)
     psi = apply(TEBD_gates, psi; cutoff=cutoff, maxdim=chi)
 
     println("Norm before normalization: ", norm(psi))
@@ -219,29 +274,25 @@ let
 
     # Recalculate timestep
     new_energy = state_energy(zvals, zzcorr, J, h, offset)
-    dE = new_energy - energy
-    energy_slope = - alpha * dE / tau
-    tau = tau * dE_target / energy_slope
-    # Clip tau to reasonable values
-    tau = clamp(tau, 1E-4, 500.0)
-    println("New timestep: $tau")
     energy = new_energy
-    best_bitstring, best_energy = get_QRR(zzcorr, J, h, offset)
+    # dE = new_energy - energy
+    # energy_slope = - dE / tau
+    # tau = tau * dE_target / energy_slope
+    # Clip tau to reasonable values
+    # tau = clamp(tau, 1E-2, 1E-1)
+    # println("New timestep: $tau")
 
-    # Generate N_s samples
-    N_s = 100
-    psi = orthogonalize(psi, 1)
-    samples = [sample(psi).-1 for _ in 1:N_s]
-    # If logical order is permuted, reorder bits in samples
-    if logical_qubit_order != init_logical_qubit_order
-      for s in samples
-        s[:] = s[logical_qubit_order]
-      end
-    end
-    energy_samples = [sample_energy(s, J, h, offset) for s in samples]
+
+    # Calculate QRR solution
+    #best_bitstring, best_energy = get_QRR(zzcorr, J, h, offset)
+
+    # Print number of 1s in best sample
+    best_sample = samples[argmin(energy_samples)]
+    is_independent = is_independent_set(best_sample, collect(keys(J)))
+    println("Best sample has $(sum(best_sample)) ones and is independent: $is_independent")
 
     # Compare energies
-    println("State energy: $energy", " Best QRR energy: $best_energy", " Best sample energy: $(minimum(energy_samples))", " ΔE: $dE")
+    println("State energy: $energy", " Best sample energy: $(minimum(energy_samples))")
   end
 
   # Generate N_s samples
@@ -261,7 +312,8 @@ let
   avg_energy = Statistics.mean(energy_samples)
   std_energy = Statistics.std(energy_samples)
   println("Average energy: $avg_energy ± $std_energy")
-  println("Best energy: $(minimum(energy_samples))")
+
+  #println("Best sample has $(sum(best_sample)) ones")
   #println("Best sample: $(samples[argmin(energy_samples)])")
 
   # Generate random bitstrings and compute their energies
