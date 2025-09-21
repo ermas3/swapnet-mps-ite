@@ -1,4 +1,4 @@
-using ITensors, ITensorMPS, Graphs, Plots, Statistics, JSON, LinearAlgebra, ProgressBars, Random, HDF5, LaTeXStrings
+using ITensors, ITensorMPS, Graphs, Plots, Statistics, JSON, LinearAlgebra, ProgressBars, Random, HDF5, SparseArrays, Arpack
 
 include("utilities.jl")
 include("tebd.jl")
@@ -6,6 +6,34 @@ include("qrr.jl")
 
 function callback(psi)
 	return nothing
+end
+
+function fiedler_ordering(J::Dict{Tuple{Int,Int}, Float64})
+    # Determine number of qubits
+    nodes = unique(vcat([i for (i,j) in keys(J)], [j for (i,j) in keys(J)]))
+    N = maximum(nodes)
+
+    # Build adjacency matrix using absolute weights
+    rows, cols, vals = Int[], Int[], Float64[]
+    for ((i,j), Jij) in J
+        w = abs(Jij)  # use absolute value
+        push!(rows, i); push!(cols, j); push!(vals, w)
+        push!(rows, j); push!(cols, i); push!(vals, w)  # symmetric
+    end
+
+    A = sparse(rows, cols, vals, N, N)
+    D = spdiagm(0 => vec(sum(A, dims=2)))
+    L = D - A
+
+    # Compute Fiedler vector (second smallest eigenvector)
+    λ, V = Arpack.eigs(L; nev=2, which=:SM)  # smallest magnitude eigenvalues
+    V = real(V)
+    fiedler_vector = V[:,2]
+
+    # Return permutation of nodes sorted by Fiedler vector
+    ordering = sortperm(fiedler_vector)  # 1-based indices
+	print("Fiedler ordering: $ordering\n")
+    return ordering
 end
 
 function run_TEBD(
@@ -18,6 +46,7 @@ function run_TEBD(
 	Nsamples = 1000,
 	Nsteps = 20,
 	n_threads = 8,
+	qubit_ordering = "default",
 	save_dir = missing,
 	save_prefix = "results",
 )
@@ -31,8 +60,6 @@ function run_TEBD(
 	# Prepare save directory
 	if save_dir === missing
 		println("No save directory provided.")
-	else
-		
 	end
 
 	println("Optimizing Ising model with $N qubits and $(length(collect(keys(J)))) couplings")
@@ -42,11 +69,23 @@ function run_TEBD(
 	psi = initialize_superposition(sites)
 
 	# Initial logical qubit order
-	init_logical_qubit_order = collect(1:N)
+	if qubit_ordering === "default"
+		init_logical_qubit_order = collect(1:N)
+		shuffle!(init_logical_qubit_order)
+	elseif qubit_ordering === "fiedler"
+		init_logical_qubit_order = fiedler_ordering(J)
+	elseif qubit_ordering === "shuffle"
+		init_logical_qubit_order = collect(1:N)
+		shuffle!(init_logical_qubit_order)
+	else
+		error("Invalid qubit ordering: $qubit_ordering")
+	end
+
+	println("Initial logical qubit order: $init_logical_qubit_order")
 	logical_qubit_order = copy(init_logical_qubit_order)
 
 	# Initial correlations and expectations
-	z_expvals, zz_expvals = get_expvals(psi)
+	z_expvals, zz_expvals = get_expvals(psi, logical_qubit_order)
 	energy = state_energy(z_expvals, zz_expvals, J, h, offset)
 
 	# Initial samples and energies
@@ -90,7 +129,7 @@ function run_TEBD(
 		energy = state_energy(z_expvals, zz_expvals, J, h, offset)
 
 		samples = get_samples(psi, Nsamples, logical_qubit_order)
-		num_unique_samples = length(unique(eachcol(samples)))
+		num_unique_samples = length(unique([Tuple(col) for col in eachcol(samples)]))
 
 		energy_samples = [sample_energy(samples[:, i], J, h, offset) for i in 1:size(samples, 2)]
 		energy_std = Statistics.std(energy_samples)
@@ -116,6 +155,11 @@ function run_TEBD(
 			Effective time step: $tau_effective
 			Number of unique samples: $num_unique_samples""",
 		)
+
+		if energy_std < 1E-6
+			println("Energy std below threshold, stopping TEBD.")
+			break
+		end
 	end
 
 	# Save results, if save directory provided
@@ -137,16 +181,18 @@ function run_TEBD(
 end
 
 let
-	chi = 32
+	# Parameters for running TEBD on multiple instances
+	chi = 64
 	cutoff = 1E-9
-	tau = 1.0
+	tau = 5.0
 	tau_min = 1E-4
-	tau_max = 1E-1
+	tau_max = 1E0
 	Nsamples = 1000
 	Nsteps = 10
 	n_threads = 8
 
-	for idx in 0:5
+	for idx in 0:0
+		graph_path = joinpath(@__DIR__, "..", "data", "MaxCut", "3Reg", "200v", "graphs", "graph$(idx).json")
 		data_path = joinpath(@__DIR__, "..", "data", "MaxCut", "3Reg", "200v", "Ising", "ising_graph$(idx).json")
 		save_dir = joinpath(@__DIR__, "..", "results", "MaxCut", "3Reg", "200v", "MPS", "ising_graph$(idx)")
 
@@ -160,25 +206,10 @@ let
 			Nsamples = Nsamples,
 			Nsteps = Nsteps,
 			n_threads = n_threads,
+			qubit_ordering = "fiedler",
 			save_dir = save_dir,
 		)
 	end
-
-	# data_path = joinpath(@__DIR__, "..", "data", "MaxCut", "3Reg", "200v", "Ising", "ising_graph0.json")
-	# save_dir = joinpath(@__DIR__, "..", "results", "MaxCut", "MPS", "ising_graph0")
-
-	# run_TEBD(
-	# 	data_path,
-	# 	chi = chi,
-	# 	cutoff = cutoff,
-	# 	tau = tau,
-	# 	tau_min = tau_min,
-	# 	tau_max = tau_max,
-	# 	Nsamples = Nsamples,
-	# 	Nsteps = Nsteps,
-	# 	n_threads = n_threads,
-	# 	save_dir = save_dir,
-	# )
 end
 
 # let
