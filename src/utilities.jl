@@ -157,3 +157,30 @@ function save_results(
 	end
 	return nothing
 end
+
+function fiedler_ordering(J::Dict{Tuple{Int,Int}, Float64})
+    # Determine number of qubits
+    nodes = unique(vcat([i for (i,j) in keys(J)], [j for (i,j) in keys(J)]))
+    N = maximum(nodes)
+
+    # Build adjacency matrix using absolute weights
+    rows, cols, vals = Int[], Int[], Float64[]
+    for ((i,j), Jij) in J
+        w = abs(Jij)  # use absolute value
+        push!(rows, i); push!(cols, j); push!(vals, w)
+        push!(rows, j); push!(cols, i); push!(vals, w)  # symmetric
+    end
+
+    A = sparse(rows, cols, vals, N, N)
+    D = spdiagm(0 => vec(sum(A, dims=2)))
+    L = D - A
+
+    # Compute Fiedler vector (second smallest eigenvector)
+    λ, V = Arpack.eigs(L; nev=2, which=:SM)  # smallest magnitude eigenvalues
+    V = real(V)
+    fiedler_vector = V[:,2]
+
+    # Return permutation of nodes sorted by Fiedler vector
+    ordering = sortperm(fiedler_vector)  # 1-based indices
+    return ordering
+end
