@@ -124,7 +124,7 @@ function save_results(
 	samples_list::Vector{Matrix{Int}},
 	energy_samples_list::Vector{Vector{Float64}},
 	time_list::Vector{Float64},
-	params::Dict{String, Real},
+	params::Dict{String, Any},
 	save_dir::String,
 	file_prefix::String = "results"
 )
@@ -154,7 +154,6 @@ function save_results(
 	open(paramfile, "w") do file
 		JSON.print(file, params)
 
-
 	end
 	return nothing
 end
@@ -180,7 +179,7 @@ function fiedler_ordering(J::Dict{Tuple{Int,Int}, Float64})
     λ, V = Arpack.eigs(L; nev=2, which=:SM)  # smallest magnitude eigenvalues
     V = real(V)
     fiedler_vector = V[:,2]
-
+	#print(fiedler_vector)
     # Return permutation of nodes sorted by Fiedler vector
     ordering = sortperm(fiedler_vector)  # 1-based indices
     return ordering
