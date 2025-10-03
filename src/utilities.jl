@@ -124,6 +124,7 @@ function save_results(
 	samples_list::Vector{Matrix{Int}},
 	energy_samples_list::Vector{Vector{Float64}},
 	time_list::Vector{Float64},
+	runtime_list::Vector{Float64},
 	params::Dict{String, Any},
 	save_dir::String,
 	file_prefix::String = "results"
@@ -142,6 +143,7 @@ function save_results(
 		write(file, "samples", samples_array)
 		write(file, "energy_samples", energy_samples_array)
 		write(file, "time", time_list)
+		write(file, "runtime", runtime_list)
 
 		for (s, psi) in enumerate(state_list)
 			g = create_group(file, "psi_$(s-1)")
