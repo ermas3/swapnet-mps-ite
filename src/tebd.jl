@@ -1,4 +1,4 @@
-function SWAP_network_block(s,
+function quadratic_SWAP_network_block(s,
 	J::Dict{Tuple{Int, Int},
 		Float64},
 	h::Dict{Int, Float64},
@@ -21,6 +21,7 @@ function SWAP_network_block(s,
 		else
 			layer % 2 == 0
 			pairs = [(i, i + 1) for i in 2:2:N-1 if i + 1 <= N]
+			pairs = reverse(pairs)
 		end
 
 		for (a, b) in pairs
@@ -77,6 +78,7 @@ function triangular_SWAP_network_block(s,
 				pairs = [(i, i + 1) for i in 1:2:max_pair]
 			else
 				pairs = [(i, i + 1) for i in 2:2:max_pair]
+				pairs = reverse(pairs)
 			end
 		elseif !bottom_up
 			min_pair = max(N-layer, layer - (N - 2))
@@ -84,6 +86,7 @@ function triangular_SWAP_network_block(s,
 				pairs = [(i, i + 1) for i in (N-1):-2:min_pair]
 			else
 				pairs = [(i, i + 1) for i in (N-2):-2:min_pair]
+				pairs = reverse(pairs)
 			end
 		end
 
@@ -204,6 +207,7 @@ function run_TEBD(
 	samples_list = Vector{Matrix{Int}}([samples])
 	energy_samples_list = Vector{Vector{Float64}}([energy_samples])
 	time_list = Vector{Float64}([0.0])
+	runtime_list = Vector{Float64}([0.0])
 
 	params = Dict(
 		"chi" => chi,
@@ -219,18 +223,16 @@ function run_TEBD(
 	)::Dict{String, Any}
 
 	progress_bar = ProgressBar(1:Nsteps)
+	start_time = time()
 	for step in progress_bar
-		# TEBD evolution
-		tau_effective = tau * energy_std_t0 / energy_std^2
-		#tau_effective = tau / energy_std
-		tau_effective = clamp(tau_effective, tau_min, tau_max)
+		tau_effective = tau
 
 		if network_architecture === "triangular"
 			#bottom_up = true  # Always do bottom-up for now
 			bottom_up = step % 2 == 1
 			TEBD_gates, logical_qubit_order = triangular_SWAP_network_block(sites, J, h, tau_effective, logical_qubit_order, zz_expvals, z_expvals, bottom_up)
 		elseif network_architecture === "quadratic"
-			TEBD_gates, logical_qubit_order = SWAP_network_block(sites, J, h, tau_effective, logical_qubit_order, zz_expvals, z_expvals)
+			TEBD_gates, logical_qubit_order = quadratic_SWAP_network_block(sites, J, h, tau_effective, logical_qubit_order, zz_expvals, z_expvals)
 		else
 			error("Invalid network architecture: $network_architecture")
 		end
@@ -264,6 +266,7 @@ function run_TEBD(
 		push!(samples_list, samples)
 		push!(energy_samples_list, energy_samples)
 		push!(time_list, time_list[end] + tau_effective)
+		push!(runtime_list, time() - start_time)
 
 		# Update progress bar
 		set_multiline_postfix(
@@ -276,7 +279,7 @@ function run_TEBD(
 			Number of unique samples: $num_unique_samples out of $Nsamples """,
 		)
 
-		if energy_std < 1E-3
+		if energy_std < 1E-3 * energy_std_t0
 			println("Energy std below threshold, stopping TEBD.")
 			break
 		end
@@ -293,6 +296,7 @@ function run_TEBD(
 			samples_list,
 			energy_samples_list,
 			time_list,
+			runtime_list,
 			params,
 			save_dir,
 		)
