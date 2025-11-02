@@ -1,9 +1,13 @@
 # Matrix Product State (MPS) SWAP Network QUBO Solver
 
+<p align="center">
+  <img src="figures/paper_figures/Algorithm_Schematic.png" alt="Algorithm schematic overview" width="720">
+</p>
+
 This repository contains the code used to produce the results of the paper "Enhancing Quantum-Inspired Tensor Network Optimization using SWAP Networks and Problem-Aware Qubit Layout".
 
 ## Project Description
-The solver implements tensor-network-based imaginary time evolution to optimise QUBO instances using matrix product states. Rectangular and triangualr SWAP network layouts are combined with problem-aware qubit orderings (e.g. Fiedler heuristics) to improve convergence on dense graphs. The accompanying utilities cover data loading, sampling, entanglement analysis, and result persistence to support reproducible studies and parameter sweeps.
+The solver implements tensor-network-based imaginary time evolution to optimise QUBO instances using matrix product states. Rectangular and triangular SWAP network layouts are combined with problem-aware qubit orderings (e.g. Fiedler heuristics) to improve convergence on dense graphs. The accompanying utilities cover data loading, sampling, entanglement analysis, and result persistence to support reproducible studies and parameter sweeps.
 
 ## Contents
 The repository is organized as follows:
@@ -31,6 +35,14 @@ For any questions or issues, please contact the authors of the paper.
 ## Citation
 If you build upon this code in academic or industrial work, please cite:
 
-TBD
+```
+@article{swapNetworkMPS,
+  title     = {Enhancing Quantum-Inspired Tensor Network Optimization using SWAP Networks and Problem-Aware Qubit Layout},
+  author    = {Authors, A. and Collaborators, B.},
+  journal   = {Journal / Conference},
+  year      = {2024},
+  url       = {https://arxiv.org/abs/XXXX.XXXXX}
+}
+```
 
 Feel free to adapt the entry to match the published venue details.
