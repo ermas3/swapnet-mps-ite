@@ -4,7 +4,7 @@
   <img src="figures/paper_figures/Algorithm_Schematic.png" alt="Algorithm schematic overview" width="720">
 </p>
 
-This repository contains the code used to produce the results of the paper "Enhancing Quantum-Inspired Tensor Network Optimization using SWAP Networks and Problem-Aware Qubit Layout".
+This repository contains the code used to produce the results of the paper "Enhancing Quantum-Inspired Tensor Network Optimization using SWAP Networks and Problem-Aware Qubit Layout", available as a [pre-print on arXiv](https://arxiv.org/abs/2511.02980).
 
 ## Project Description
 The solver implements tensor-network-based imaginary time evolution to optimise QUBO instances using matrix product states. Rectangular and triangular SWAP network layouts are combined with problem-aware qubit orderings (e.g. Fiedler heuristics) to improve convergence on dense graphs. The accompanying utilities cover data loading, sampling, entanglement analysis, and data analysis.
@@ -33,8 +33,18 @@ The code is written in Julia and was tested with Julia version 1.8.1. Tensor net
 For any questions or issues, please contact the authors of the paper.
 
 ## Citation
-If you build upon this code in academic or industrial work, please cite:
+If you build upon this code in academic or industrial work, please cite the pre-print as follows:
 
-TBD
+```bibtex
+@misc{åsgrim2025swapnetworkroutingspectralqubit,
+      title={SWAP-Network Routing and Spectral Qubit Ordering for MPS Imaginary-Time Optimization}, 
+      author={Erik M. Åsgrim and Stefano Markidis},
+      year={2025},
+      eprint={2511.02980},
+      archivePrefix={arXiv},
+      primaryClass={quant-ph},
+      url={https://arxiv.org/abs/2511.02980}, 
+}
+```
 
 Feel free to adapt the entry to match the published venue details.
